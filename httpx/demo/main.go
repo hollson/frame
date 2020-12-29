@@ -7,9 +7,9 @@ import (
 
 //go:generate curl http://127.0.0.1:8080/get
 func main() {
-    router := httpx.Default()
-    router.Register("/get", GetHandler)
-    router.Register("/post", PostHandler)
+    router := httpx.NewServer()
+    router.AddRoute("/get", GetHandler)
+    router.AddRoute("/post", PostHandler)
     router.Run(":8080")
 }
 
