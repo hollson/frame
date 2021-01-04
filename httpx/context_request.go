@@ -8,26 +8,28 @@ import (
     "strings"
 )
 
+type request struct {
+    Path    string
+    Method  string
+    headers map[string]string
+    queries map[string]string
+    posts   map[string]string
+}
+
 type reader struct {
     conn net.Conn
-    readerData
+    message
     buff    []byte
     buffLen int
     start   int
     end     int
 }
 
-type readerData struct {
-    line   map[string]string // 请求行
-    header map[string]string // 请求头
-    body   string            // 请求体
-}
-
 // 实例化
 func newReader(conn net.Conn, buffLen int) *reader {
     return &reader{
         conn: conn,
-        readerData: readerData{
+        message: message{
             line:   make(map[string]string),
             header: make(map[string]string),
         },
@@ -97,35 +99,48 @@ func (reader *reader) parseBody() (isOk bool, err error) {
     return true, nil
 }
 
+// 前移上一次未处理完的数据
+func (reader *reader) move() {
+    if reader.start == 0 {
+        return
+    }
+    copy(reader.buff, reader.buff[reader.start:reader.end])
+    reader.end -= reader.start
+    reader.start = 0
+}
+
 // 读取http请求
-func (reader *reader) read(accept chan readerData) (err error) {
+func (reader *reader) responseHandler(accept chan message) (err error) {
     for {
         if reader.end == reader.buffLen {
             // 缓冲区的容量存不了一条请求的数据
             return fmt.Errorf("request is too large:%v", reader)
         }
+
         buffLen, err := reader.conn.Read(reader.buff)
         if err != nil {
             // 连接关闭了
-            return nil
+            return err
         }
         reader.end += buffLen
 
         // 解析请求行
         isOk, err := reader.parseLine()
-        if err != nil {
-            return fmt.Errorf("parse request line error:%v", err)
-        }
-        if !isOk {
+        if err == nil && !isOk {
             continue
         }
+
+        if err != nil {
+            return err
+        }
+
         // 解析请求头
         reader.parseHeader()
         // 如果是post请求，解析请求体
         if len(reader.header) > 0 && strings.EqualFold(strings.ToUpper(reader.line["method"]), "POST") {
             isOk, err := reader.parseBody()
             if err != nil {
-                return fmt.Errorf("parse request body error:%v", err)
+                return err
             }
             // 读取http请求体未成功
             if !isOk {
@@ -135,17 +150,7 @@ func (reader *reader) read(accept chan readerData) (err error) {
                 continue
             }
         }
-        accept <- reader.readerData
+        accept <- reader.message
         reader.move()
     }
-}
-
-// 前移上一次未处理完的数据
-func (reader *reader) move() {
-    if reader.start == 0 {
-        return
-    }
-    copy(reader.buff, reader.buff[reader.start:reader.end])
-    reader.end -= reader.start
-    reader.start = 0
 }
