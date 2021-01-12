@@ -18,6 +18,7 @@ type request struct {
 
 type reader struct {
     conn net.Conn
+
     message
     buff    []byte
     buffLen int
@@ -110,7 +111,7 @@ func (reader *reader) move() {
 }
 
 // 读取http请求
-func (reader *reader) responseHandler(accept chan message) (err error) {
+func (reader *reader) requestHandler(accept chan message) (err error) {
     for {
         if reader.end == reader.buffLen {
             // 缓冲区的容量存不了一条请求的数据

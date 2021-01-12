@@ -32,7 +32,6 @@ func newContext() *Context {
 // 解析请求内容
 func (c *Context) parse(readerData message) {
     c.Request.Method = readerData.line["method"]
-    // c.request.headers = readerData.header
 
     // 解析请求path和get参数
     var queries string

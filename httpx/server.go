@@ -3,42 +3,38 @@ package httpx
 import (
     "fmt"
     "net"
+    "time"
 )
 
-// 单条请求数据大小为 40k
-const MaxRequestSize = 1024 * 40
+const MaxRequestSize = (1 << 10) * 4 // 4K
 
 type Server interface {
-    AddRoute(path string, handle HandlerFunc)
+    AddRoute(path string, f HandlerFunc)
+    Use(f HandlerFunc)
     Run(addr string) error
 }
 
 // 服务引擎
 type server struct {
-    router     *Router       // 路由
+    router     Router        // 路由表
     middleware []HandlerFunc // 中间件
-    // logger     log.Logger      // 日志
 }
 
-// 创建服务实例
 func NewServer() *server {
     return &server{
-        router:     &Router{make(map[string]HandlerFunc)},
+        router:     make(map[string]HandlerFunc),
         middleware: make([]HandlerFunc, 0),
     }
 }
 
-// 注册路由
-func (r *server) AddRoute(path string, handle HandlerFunc) {
-    r.router.table[path] = handle
+func (r *server) AddRoute(path string, f HandlerFunc) {
+    r.router[path] = f
 }
 
-// 中间件
 func (r *server) Use(f HandlerFunc) {
     r.middleware = append(r.middleware, f)
 }
 
-// 运行服务
 func (r *server) Run(addr string) error {
     listener, err := net.Listen("tcp4", addr)
     if err != nil {
@@ -63,41 +59,42 @@ func (r *server) process(conn net.Conn) {
     defer conn.Close()
     defer close(msg)
 
-    // 处理请求
-    go r.requestHandler(msg, conn)
+    // 处理响应(监听报文)
+    go r.responseHandler(msg, conn)
 
-    // 处理响应
+    // 处理请求
     reader := newReader(conn, MaxRequestSize)
-    err := reader.responseHandler(msg) // 非阻塞
+    err := reader.requestHandler(msg)
     if err != nil {
         response := newResponse(conn)
-        response.errWrite(400)
+        response.writeErr(400)
     }
-
 }
 
-// 监听通道，解析请求数据
-func (r *server) requestHandler(accept chan message, conn net.Conn) {
+// 处理上下文
+func (r *server) responseHandler(msg chan message, c net.Conn) {
+    var ctx = newContext()
+    ctx.response = newResponse(c)
+
     for {
-        data, isOk := <-accept
-        if !isOk {
+        data, ok := <-msg
+        if !ok {
+            time.Sleep(time.Second)
             return
         }
-        req := newContext()
-        req.response = newResponse(conn)
-        req.parse(data)
+        ctx.parse(data)
 
         // 执行中间件
         for _, f := range r.middleware {
-            f(req)
+            f(ctx)
         }
-        if f, ok := r.router.table[req.Request.Path]; ok {
 
-            f(req)
-            req.response.write()
+        // 处理请求
+        if f, ok := r.router[ctx.Request.Path]; ok {
+            f(ctx)
+            ctx.response.write() // fixme：输出
             return
         }
-
-        req.response.errWrite(404)
+        ctx.response.writeErr(404)
     }
 }
