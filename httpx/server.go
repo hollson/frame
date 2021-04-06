@@ -8,13 +8,17 @@ import (
 
 const MaxRequestSize = (1 << 10) * 4 // 4K
 
+// 一个web-server，本质是一个路由器对象，具备的要点：
+//  1. 持有一个路由集合，以处理多路服务端请求；
+//  2. 一个TCP的端口监听服务，用于接收请求与响应请求；
+//  其次，可以附加中间件等功能。
 type Server interface {
     AddRoute(path string, f HandlerFunc)
     Use(f HandlerFunc)
     Run(addr string) error
 }
 
-// 服务引擎
+// 服务引擎(只包含两个路由集合字段)
 type server struct {
     router     Router        // 路由表
     middleware []HandlerFunc // 中间件
@@ -27,24 +31,27 @@ func NewServer() *server {
     }
 }
 
+// 向路由表添加路由信息
 func (r *server) AddRoute(path string, f HandlerFunc) {
     r.router[path] = f
 }
 
+// 添加中间件
 func (r *server) Use(f HandlerFunc) {
     r.middleware = append(r.middleware, f)
 }
 
+// 启动一个TCP监听服务
 func (r *server) Run(addr string) error {
     listener, err := net.Listen("tcp4", addr)
     if err != nil {
         return fmt.Errorf("%v", err)
     }
-
     fmt.Println("服务已启动：", listener.Addr().String())
+
+    // 阻塞式服务
     for {
-        // 阻塞等待连接
-        conn, err := listener.Accept()
+        conn, err := listener.Accept() // 接受多个客户端连接
         if err != nil {
             fmt.Println(err)
             continue
@@ -75,7 +82,6 @@ func (r *server) process(conn net.Conn) {
 func (r *server) responseHandler(msg chan message, c net.Conn) {
     var ctx = newContext()
     ctx.response = newResponse(c)
-
     for {
         data, ok := <-msg
         if !ok {
