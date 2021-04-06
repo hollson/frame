@@ -26,8 +26,8 @@ func GetHandler(c *httpx.Context) {
     })
 }
 
-//go:generate curl http://172.30.0.86:8080/post
-//go:generate curl --proxy 0.0.0.0:10008 http://172.30.0.86:8080/post
+//go:generate curl http://127.0.0.1:8080/post
+//go:generate curl --proxy 0.0.0.0:10008 http://127.0.0.1:8080/post
 func PostHandler(c *httpx.Context) {
     c.Json(200, httpx.H{
         "hello": "post",
